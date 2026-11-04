@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -48,27 +49,30 @@ class SettingsActivity : ComponentActivity() {
     @Composable fun Screen() {
         Prefs.ver.intValue
         val p = Pal(isDark())
-        val menu = listOf("应用架", "推荐来源", "天气城市", "主题", "屏保", "去广告", "恢复原厂桌面", "开发者选项教程")
+        val menu = listOf("应用架", "推荐来源", "天气城市", "主题", "屏保", "去广告", "恢复原厂", "开发教程", "壁纸与标题")
         var sel by remember { mutableIntStateOf(intent.getIntExtra("sel", 0)) }
         val first = remember { FocusRequester() }
         Box(Modifier.fillMaxSize().background(p.bg)) {
-            Column(Modifier.padding(start = 80.u, top = 80.u, bottom = 80.u).width(520.u).fillMaxHeight().clip(RoundedCornerShape(44.u)).background(p.glass)
-                .border(1.u, p.glassBorder, RoundedCornerShape(44.u)).padding(horizontal = 30.u, vertical = 50.u)) {
-                T("设置", 44, p.fg, FontWeight.Bold, Modifier.padding(start = 20.u, bottom = 30.u))
-                menu.forEachIndexed { i, s ->
-                    var fo by remember { mutableStateOf(false) }
-                    val on = i == sel
-                    Box(Modifier.padding(bottom = 6.u).fillMaxWidth().scale(if (fo) 1.04f else 1f).shadow(if (fo) 14.u else 0.u, RoundedCornerShape(24.u)).clip(RoundedCornerShape(24.u))
-                        .background(if (fo) Color.White else if (on) p.glassBorder else Color.Transparent)
-                        .then(if (i == 0) Modifier.focusRequester(first) else Modifier).tvClick({ fo = it; if (it) sel = i }) { sel = i }.padding(horizontal = 30.u, vertical = 20.u)) {
-                        T(s, 30, if (fo) Color(0xFF111111) else if (i == 6) Color(0xFFFF6A3D) else p.fg, alpha = if (fo || on) 1f else .75f)
+            Column(Modifier.padding(start = 80.u, top = 60.u, bottom = 60.u).width(480.u).fillMaxHeight().clip(RoundedCornerShape(44.u)).background(p.glass)
+                .border(1.u, p.glassBorder, RoundedCornerShape(44.u)).padding(horizontal = 24.u, vertical = 36.u)) {
+                T("设置", 40, p.fg, FontWeight.Bold, Modifier.padding(start = 16.u, bottom = 20.u))
+                Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    menu.forEachIndexed { i, s ->
+                        var fo by remember { mutableStateOf(false) }
+                        val on = i == sel
+                        Box(Modifier.padding(bottom = 6.u).fillMaxWidth().clip(RoundedCornerShape(24.u))
+                            .background(if (fo) Color.White else if (on) Color(0xFF1F8BFF) else Color.Transparent)
+                            .then(if (i == 0) Modifier.focusRequester(first) else Modifier).tvClick({ fo = it; if (it) sel = i }) { sel = i }.padding(horizontal = 24.u, vertical = 16.u)) {
+                            T(s, 28, if (fo) Color(0xFF111111) else if (on) Color.White else if (i == 6) Color(0xFFFF6A3D) else p.fg, FontWeight.SemiBold, alpha = if (fo || on) 1f else .85f)
+                        }
                     }
+                    Spacer(Modifier.height(40.u))
                 }
             }
-            Column(Modifier.padding(start = 680.u, end = 100.u, top = 80.u)) {
+            Column(Modifier.padding(start = 620.u, end = 80.u, top = 60.u, bottom = 48.u).fillMaxHeight()) {
                 when (sel) {
                     0 -> ShelfPane(p); 1 -> SourcePane(p); 2 -> CityPane(p); 3 -> ThemePane(p); 4 -> SaverPane(p)
-                    5 -> AdPane(p); 6 -> RestorePane(p); else -> GuidePane(p)
+                    5 -> AdPane(p); 6 -> RestorePane(p); 8 -> WallPane(p); else -> GuidePane(p)
                 }
             }
         }
@@ -80,9 +84,10 @@ class SettingsActivity : ComponentActivity() {
     @Composable fun Item(p: Pal, title: String, sub: String = "", state: String = "", sw: Boolean? = null, onClick: () -> Unit = {}, trailing: @Composable RowScope.() -> Unit = {}) {
         var fo by remember { mutableStateOf(false) }
         val fg = if (fo) Color(0xFF111111) else p.fg
-        Row(Modifier.padding(bottom = 18.u).fillMaxWidth().clip(RoundedCornerShape(28.u)).background(if (fo) Color.White else p.glass)
+        Row(Modifier.padding(bottom = 18.u).fillMaxWidth().clip(RoundedCornerShape(28.u)).background(if (fo) Color.White else Color(0x33FFFFFF))
+            .border(1.u, if (fo) Color.Transparent else p.glassBorder, RoundedCornerShape(28.u))
             .tvClick({ fo = it }, onClick = onClick).padding(horizontal = 40.u, vertical = 26.u), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { T(title, 30, fg); if (sub.isNotBlank()) T(sub, 20, fg, modifier = Modifier.padding(top = 6.u), alpha = .55f, lines = 3) }
+            Column(Modifier.weight(1f)) { T(title, 30, fg, FontWeight.SemiBold); if (sub.isNotBlank()) T(sub, 20, fg, modifier = Modifier.padding(top = 6.u), alpha = .7f, lines = 3) }
             if (state.isNotBlank()) T(state, 22, fg, modifier = Modifier.padding(end = 24.u), alpha = .6f)
             if (sw != null) Box(Modifier.size(96.u, 54.u).clip(RoundedCornerShape(30.u)).background(if (sw) Color(0xFF34C759) else Color(0x33888888)).padding(5.u),
                 contentAlignment = if (sw) Alignment.CenterEnd else Alignment.CenterStart) { Box(Modifier.size(44.u).clip(RoundedCornerShape(22.u)).background(Color.White)) }
@@ -163,7 +168,8 @@ class SettingsActivity : ComponentActivity() {
         val log = Debloat.log()
         val homes = remember { Debloat.stockHomes(ctx).map { it.substringBefore("/") } }
         val adsHere = remember { Debloat.ADS.filter { Apps.isInstalled(ctx, it.pkg) } }
-        Head(p, "去广告", if (log.empty) "通过本机 ADB 设为默认桌面，停用（不卸载）原厂桌面和推广/开机广告应用。需先打开 USB 调试，见「开发者选项教程」。" else "已为你屏蔽以下原厂内容，桌面更干净、开机更快")
+        val auditHere = remember { Debloat.auditInstalled(ctx) }
+        Head(p, "去广告", if (log.empty) "通过本机 ADB 设为默认桌面，停用（不卸载）原厂桌面和推广/开机广告。清单 ${adsHere.size} 项，审计另发现 ${auditHere.size} 项疑似广告。需先打开 USB 调试。" else "已为你屏蔽原厂推广内容，桌面更干净、开机更快")
         LazyColumn {
             item {
                 val homeOff = homes.any { it in log.disabled }
@@ -216,6 +222,87 @@ class SettingsActivity : ComponentActivity() {
                         Box(Modifier.size(36.u).clip(RoundedCornerShape(18.u)).background(Color(0xFF1F8BFF)), contentAlignment = Alignment.Center) { T("${i + 1}", 20, Color.White, FontWeight.Bold) }
                         T(s, 22, fg, modifier = Modifier.padding(start = 16.u), lines = 3, alpha = .85f)
                     } }
+                }
+            }
+        }
+    }
+
+    @Composable fun WallPane(p: Pal) {
+        val ctx = LocalContext.current
+        val hint = remember { Uploads.sizeHint(ctx) }
+        val recs = remember { loadRecs().values.flatten() }
+        val uploads = remember { mutableStateOf(Uploads.list(ctx)) }
+        Head(p, "壁纸与标题", "当前：${Wall.name(Prefs.wall)} · 标题：${Prefs.title.ifBlank { "（不显示）" }}。壁纸在上方固定区，应用架在下方可滚动。")
+        LazyColumn(Modifier.fillMaxHeight(), contentPadding = PaddingValues(bottom = 120.u)) {
+            item {
+                T("自定义壁纸（扫码上传）", 32, p.fg, FontWeight.Bold, Modifier.padding(bottom = 10.u))
+                T("建议尺寸：$hint", 22, Color(0xFFE6A800), FontWeight.SemiBold, Modifier.padding(bottom = 14.u), lines = 2)
+                var fo by remember { mutableStateOf(false) }
+                Box(Modifier.padding(bottom = 16.u).fillMaxWidth().clip(RoundedCornerShape(28.u))
+                    .background(if (fo) Color.White else Color(0xFF0071E3))
+                    .tvClick({ fo = it }) { runCatching { startActivity(Intent(this@SettingsActivity, UploadActivity::class.java)) } }
+                    .padding(horizontal = 40.u, vertical = 28.u)) {
+                    T(if (Prefs.wall.startsWith("file:")) "▶ 打开扫码上传（当前正在用自定义壁纸）" else "▶ 打开扫码上传",
+                        30, if (fo) Color(0xFF111111) else Color.White, FontWeight.Bold)
+                }
+                if (uploads.value.isNotEmpty()) {
+                    T("最近上传（OK 使用 · 菜单键删除）", 24, p.fg, modifier = Modifier.padding(bottom = 10.u))
+                    LazyRow(Modifier.padding(bottom = 20.u), horizontalArrangement = Arrangement.spacedBy(16.u)) {
+                        items(uploads.value, key = { it.name }) { f ->
+                            var ffo by remember { mutableStateOf(false) }
+                            val on = Prefs.wall == "file:${f.name}"
+                            Box(Modifier.size(220.u, 120.u).clip(RoundedCornerShape(14.u))
+                                .border(if (ffo || on) 4.u else 0.u, if (on) Color(0xFF34C759) else Color.White, RoundedCornerShape(14.u))
+                                .tvClick({ ffo = it }, onMenu = { Uploads.delete(ctx, f); uploads.value = Uploads.list(ctx) }) { Prefs.wall = "file:${f.name}" }) {
+                                Wallpaper("file:${f.name}", emptyList(), Modifier.fillMaxSize(), dim = false)
+                            }
+                        }
+                    }
+                }
+            }
+            item { T("电影海报 / 动态壁纸（二选一）", 30, p.fg, FontWeight.Bold, Modifier.padding(top = 8.u, bottom = 14.u)) }
+            item { WallRow(p, listOf("posters" to "电影海报") + Wall.DYNAMIC, recs) }
+            item { T("静态壁纸", 30, p.fg, FontWeight.Bold, Modifier.padding(top = 28.u, bottom = 14.u)) }
+            item { WallRow(p, Wall.STATIC, recs) }
+            item { T("右上角标题", 30, p.fg, FontWeight.Bold, Modifier.padding(top = 28.u, bottom = 14.u)) }
+            item {
+                Box(Modifier.padding(bottom = 16.u).fillMaxWidth().clip(RoundedCornerShape(20.u)).background(Color(0xFF1C1F2A)).padding(horizontal = 30.u, vertical = 20.u)) {
+                    T("预览（靠右）", 20, Color(0xFFAAAAAA), modifier = Modifier.align(Alignment.CenterStart))
+                    T(Prefs.title.ifBlank { "（不显示标题）" }, 30, Color.White, FontWeight.SemiBold, Modifier.align(Alignment.CenterEnd))
+                }
+            }
+            items(listOf(Prefs.DEFAULT_TITLE, "清爽桌面", "我的家庭影院", "")) { t ->
+                Item(p, t.ifBlank { "不显示标题" }, state = if (Prefs.title == t) "✓" else "", onClick = { Prefs.title = t }) }
+            item {
+                var txt by remember { mutableStateOf(Prefs.title) }
+                T("自定义标题（最多 20 字）", 24, p.fg, modifier = Modifier.padding(bottom = 10.u))
+                Row(Modifier.padding(bottom = 40.u), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.foundation.text.BasicTextField(txt, { txt = it.take(20) },
+                        Modifier.weight(1f).heightIn(min = 72.u).clip(RoundedCornerShape(20.u)).background(Color.White)
+                            .padding(horizontal = 24.u, vertical = 18.u),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 28.f, color = Color.Black), singleLine = true)
+                    Spacer(Modifier.width(20.u))
+                    var fo by remember { mutableStateOf(false) }
+                    Box(Modifier.width(200.u).clip(RoundedCornerShape(20.u)).background(if (fo) Color.White else Color(0xFF34C759))
+                        .tvClick({ fo = it }) { Prefs.title = txt.trim(); toast("已保存") }.padding(vertical = 18.u), contentAlignment = Alignment.Center) {
+                        T("保存", 28, if (fo) Color.Black else Color.White, FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable fun WallRow(p: Pal, list: List<Pair<String, String>>, recs: List<Rec>) {
+        Row(horizontalArrangement = Arrangement.spacedBy(24.u)) {
+            list.forEach { (k, n) ->
+                var fo by remember { mutableStateOf(false) }
+                val on = Prefs.wall == k
+                Column(Modifier.tvClick({ fo = it }) { Prefs.wall = k }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(256.u, 144.u).clip(RoundedCornerShape(18.u))
+                        .border(if (fo) 5.u else if (on) 3.u else 0.u, if (fo) Color.White else Color(0xFF34C759), RoundedCornerShape(18.u))) {
+                        Wallpaper(k, recs, Modifier.fillMaxSize(), dim = false)
+                    }
+                    T((if (on) "✓ " else "") + n, 22, p.fg, FontWeight.SemiBold, Modifier.padding(top = 8.u))
                 }
             }
         }

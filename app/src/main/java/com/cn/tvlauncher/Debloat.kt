@@ -44,6 +44,17 @@ object Debloat {
         Item("com.hisense.tv.advertisementpr", "海信", "广告组件 [E]", boot = true),
         Item("com.hisense.service.ad", "海信", "广告服务 [E]"),
         Item("com.hisense.magic.ad", "海信", "广告组件 [E]"),
+        Item("com.hisense.hitv.advertise", "海信", "广告服务"),
+        Item("com.hisense.tv.ad", "海信", "广告"),
+        Item("com.hisense.ad", "海信", "广告"),
+        Item("com.jamdeo.tv.vendor.ads", "海信/Jamdeo", "厂商广告"),
+        Item("com.hisense.tv.messagecenter", "海信", "消息中心弹窗"),
+        Item("com.hisense.push", "海信", "推送"),
+        Item("com.hisense.store", "海信", "应用商店推广"),
+        Item("com.tcl.waterfall.overseas", "TCL", "瀑布流推广"),
+        Item("com.tcl.partnercustomizer", "TCL", "合作推广"),
+        Item("com.xiaomi.mitv.payment", "小米", "支付/商城推广"),
+        Item("com.mitv.gallery", "小米", "画廊推广"),
         Item("com.tianci.ad", "创维/酷开", "广告 [D]", boot = true),
         Item("com.tianci.push", "创维/酷开", "推送 [D]"),
         Item("com.coocaa.messageprovider", "创维/酷开", "消息推送 [D]"),
@@ -51,7 +62,22 @@ object Debloat {
         Item("com.smartdevice.recommendation", "创维", "推广频道 [F]"),
     )
 
-    /** 永不停用：系统、设置、输入源、遥控、安装器等 */
+    /** 广告特征：包名含这些词且不在保护名单 → 列入审计候选（不自动停用，由 apply 再过滤） */
+    private val AD_HINTS = listOf("advertise", "advert", ".ad.", "adservice", "adservice", "tvad", "bootad", "push", "analytics", "statistic", "messageprovider", "playskill", "recommendation")
+    private val AD_HINT_SKIP = listOf("load", "pad", "shadow", "radio", "reader", "adapter", "admin", "address", "download", "update", "launcher", "provider.media", "input")
+
+    /** 扫描本机已装应用，找出清单外、包名像广告的候选（纯函数便于测试） */
+    fun auditHints(pkgs: List<String>): List<String> = pkgs.filter { p ->
+        val low = p.lowercase()
+        !isProtected(p) && ADS.none { it.pkg == p } && AD_HINTS.any { low.contains(it) } && AD_HINT_SKIP.none { low.contains(it) }
+    }.distinct().sorted()
+
+    fun auditInstalled(c: Context): List<Item> = runCatching {
+        val installed = c.packageManager.getInstalledPackages(0).map { it.packageName }
+        auditHints(installed).map { Item(it, "审计", "包名疑似广告/推广（审计发现）") }
+    }.getOrDefault(emptyList())
+
+        /** 永不停用：系统、设置、输入源、遥控、安装器等 */
     private val PROTECTED_PREFIX = listOf("android", "com.android.", "com.google.android.gms", "com.google.android.tv.remote",
         "com.mediatek.", "mitv.service", "com.mitv.tvplayer", "com.mitv.livetv", "com.xiaomi.mitv.settings")
     /** 原厂桌面被写死在系统里的品牌：只设默认桌面，不停用原厂桌面（创维/酷开停用会卡开机 [D]；海信、当贝未经核实，保守处理） */
@@ -104,9 +130,10 @@ object Debloat {
                 if (adb.shell("pm disable-user --user 0 $p").contains("disabled")) { l.disabled += p; out.append("✓ 停用原厂桌面 $p\n") }
                 save(l)
             }
-            for (it in ADS) {
+            val targets = ADS + auditInstalled(c)
+            for (it in targets) {
                 if (it.pkg in l.disabled || isProtected(it.pkg) || !Apps.isInstalled(c, it.pkg)) continue
-                if (adb.shell("pm disable-user --user 0 ${it.pkg}").contains("disabled")) { l.disabled += it.pkg; out.append("✓ 停用 ${it.brand} ${it.what}\n") }
+                if (adb.shell("pm disable-user --user 0 ${it.pkg}").contains("disabled")) { l.disabled += it.pkg; out.append("✓ 停用 ${it.brand} ${it.what}（${it.pkg}）\n") }
                 save(l)
             }
             if (saver) {

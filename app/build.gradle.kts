@@ -1,13 +1,13 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
   namespace = "com.cn.tvlauncher"; compileSdk = 34
-  defaultConfig { applicationId = "com.cn.tvlauncher"; minSdk = 23; targetSdk = 34; versionCode = 4; versionName = "1.0.3"; multiDexEnabled = true }
+  defaultConfig { applicationId = "com.cn.tvlauncher"; minSdk = 23; targetSdk = 34; versionCode = 11; versionName = "1.0.10"; multiDexEnabled = true }
   buildFeatures { compose = true; buildConfig = true }
   composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
   compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17; isCoreLibraryDesugaringEnabled = true }
   kotlinOptions { jvmTarget = "17" }
   packaging { resources { excludes += setOf("META-INF/*.kotlin_module","META-INF/LICENSE*","META-INF/NOTICE*","META-INF/versions/9/OSGI-INF/MANIFEST.MF") } }
-  testOptions { unitTests.isReturnDefaultValues = true }
+  testOptions { unitTests.isReturnDefaultValues = true; unitTests.all { t -> System.getenv("QRDUMP")?.let { t.systemProperty("qrdump", it) }; System.getenv("TEST_JPEG")?.let { t.environment("TEST_JPEG", it) } } }
   lint { abortOnError = false; checkReleaseBuilds = false }
 }
 dependencies {

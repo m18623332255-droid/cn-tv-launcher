@@ -32,5 +32,9 @@ object Prefs {
     var shelf: List<String> get() = str("shelf").split(",").filter { it.isNotBlank() }; set(v) = put("shelf", v.joinToString(","))
     var hiddenPlatforms: Set<String> get() = str("hidePlat").split(",").filter { it.isNotBlank() }.toSet(); set(v) = put("hidePlat", v.joinToString(","))
     var recKinds: Set<String> get() = str("recKinds", "movie,tv,show").split(",").filter { it.isNotBlank() }.toSet(); set(v) = put("recKinds", v.joinToString(","))
+    /** 壁纸：posters | dyn_* | st_* */
+    var wall: String get() = str("wall", "posters"); set(v) = put("wall", v)
+    const val DEFAULT_TITLE = "还原电视最初的样子"
+    var title: String get() = str("title", DEFAULT_TITLE); set(v) = put("title", v)
     var saverOk: Boolean get() = str("saverOk", "1") == "1"; set(v) = put("saverOk", if (v) "1" else "0")
 }

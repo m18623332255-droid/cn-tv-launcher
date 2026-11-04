@@ -65,4 +65,20 @@ class LogicTest {
         assertEquals("com.home.tvvideo", fallbackPlayer(listOf(a("com.home.tvvideo", "家庭影视")))?.pkg)
         assertNull(fallbackPlayer(listOf(a("x", "Hi投屏"))))
     }
+
+    @Test fun auditHintsSkipProtected() {
+        // 已在 ADS 清单里的包不会再进审计；设置/launcher 类要跳过
+        val hits = Debloat.auditHints(listOf(
+            "com.brand.newadvertise", "com.android.tv.settings", "com.demo.analytics.sdk",
+            "com.good.launcher", "com.vendor.bootadservice", "com.hisense.tv.settings",
+            "com.hisense.hitv.advertise"  // 已在 ADS，不应出现在审计结果
+        ))
+        assertTrue(hits.contains("com.brand.newadvertise"))
+        assertTrue(hits.contains("com.demo.analytics.sdk"))
+        assertTrue(hits.contains("com.vendor.bootadservice"))
+        assertFalse(hits.contains("com.hisense.hitv.advertise"))
+        assertFalse(hits.contains("com.android.tv.settings"))
+        assertFalse(hits.contains("com.hisense.tv.settings"))
+        assertFalse(hits.contains("com.good.launcher"))
+    }
 }

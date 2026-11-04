@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -29,6 +30,8 @@
             </intent-filter>
         </activity>
         <activity android:name=".SettingsActivity" android:exported="true" android:label="清爽桌面设置" android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode" />
+        <activity android:name=".UploadActivity" android:exported="false" android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode" />
         <service android:name=".Saver" android:exported="true" android:label="清爽桌面屏保"
             android:permission="android.permission.BIND_DREAM_SERVICE">

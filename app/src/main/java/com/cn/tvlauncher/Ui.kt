@@ -110,3 +110,7 @@ val WEEK = arrayOf("", "星期一", "星期二", "星期三", "星期四", "星�
 fun dateLine(d: LocalDate = LocalDate.now()) = "${d.monthValue}月${d.dayOfMonth}日 ${WEEK[d.dayOfWeek.value]} · ${Lunar.text(d)}"
 fun weatherCache(): Weather? = runCatching { JSONObject(Prefs.str("wx", "")).let { Weather(it.getInt("t"), it.getString("x"), it.getString("i"), "", "") } }.getOrNull()
 fun saveWeather(w: Weather) = Prefs.sp.edit().putString("wx", JSONObject().put("t", w.temp).put("x", w.text).put("i", w.icon).toString()).apply()
+
+/** 电视过扫描安全边距：顶部至少 28dp，两侧至少 48dp */
+val SAFE_TOP: Dp get() = maxOf(60.u, 28.dp)
+val SAFE_SIDE: Dp get() = maxOf(100.u, 48.dp)
