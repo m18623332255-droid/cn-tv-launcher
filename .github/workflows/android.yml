@@ -71,7 +71,11 @@ jobs:
           set -euo pipefail
           asset="cn-tvlauncher-${GITHUB_REF_NAME}-debug.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$asset"
-          notes=$(cat <<EOF
+          notes_file=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes_file" ]; then
+            notes=$(cat "$notes_file")
+          else
+            notes=$(cat <<EOF
           ## 清爽桌面 ${GITHUB_REF_NAME}
 
           调试版 APK，可用 U 盘或 \`adb install -r\` 安装。安装说明见仓库 README。
@@ -80,7 +84,8 @@ jobs:
 
           \`Adb.java\` 改编自 https://github.com/simbasjungles/free-my-tv （MIT）。
           EOF
-          )
+            )
+          fi
           gh release create "$GITHUB_REF_NAME" "$asset" \
             --title "清爽桌面 ${GITHUB_REF_NAME}" \
             --notes "$notes"

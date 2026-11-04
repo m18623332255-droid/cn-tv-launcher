@@ -67,7 +67,7 @@ class Saver : DreamService() {
         val r = list[idx % list.size]
         title.text = r.title
         meta.text = listOf(Recs.KINDS[r.kind] ?: "", if (r.rate.isNotBlank()) "豆瓣 ${r.rate}" else "", r.platform).filter { it.isNotBlank() }.joinToString(" · ")
-        imageLoader.enqueue(ImageRequest.Builder(this).data(r.cover).addHeader("Referer", "https://movie.douban.com/").addHeader("User-Agent", UA).crossfade(800).target(img).build())
+        imageLoader.enqueue(ImageRequest.Builder(this).data(r.cover).addHeader("Referer", "https://movie.douban.com/").addHeader("User-Agent", UA).size(1280, 720).bitmapConfig(android.graphics.Bitmap.Config.RGB_565).allowRgb565(true).crossfade(800).target(img).build())
     }
 
     override fun onDreamingStarted() { super.onDreamingStarted(); h.post(tick); h.post(slide) }
@@ -76,7 +76,7 @@ class Saver : DreamService() {
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (e.action == KeyEvent.ACTION_UP && (e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER) && list.isNotEmpty()) {
             val r = list[Math.floorMod(idx - 1, list.size)]
-            if (r.pkg.isNotBlank()) Apps.openSearch(this, r.pkg, r.title)
+            Apps.openRec(this, r, Apps.installed(this))
             finish(); return true
         }
         if (e.action == KeyEvent.ACTION_UP) finish()

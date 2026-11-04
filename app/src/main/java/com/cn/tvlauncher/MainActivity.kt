@@ -15,9 +15,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -39,18 +40,25 @@ class MainActivity : ComponentActivity() {
     private val weather = mutableStateOf<Weather?>(null)
     private val cont = mutableStateOf<List<Cont>>(emptyList())
     private val apps = mutableStateOf<List<AppInfo>>(emptyList())
-    private val now = mutableStateOf(LocalDateTime.now())
+    private val now = mutableStateOf(LocalDateTime.now().withSecond(0).withNano(0))   // 只有 Clock 读取
+    private val dark = mutableStateOf(isDark())
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Prefs.init(this)
         recs.value = loadRecs(); weather.value = weatherCache()
         setContent { InitScale(); Home() }
-        lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { now.value = LocalDateTime.now(); delay(5_000) } } }
+        lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) {
+            val t = LocalDateTime.now(); now.value = t.withSecond(0).withNano(0)   // 同一分钟内值相等，不触发重组
+            dark.value = isDark()
+            delay((60 - t.second) * 1000L + 50)
+        } } }
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                apps.value = withContext(Dispatchers.IO) { Apps.installed(this@MainActivity) }
-                cont.value = withContext(Dispatchers.IO) { Continue.all(this@MainActivity) }
+                val a = withContext(Dispatchers.IO) { Apps.installed(this@MainActivity) }
+                if (a != apps.value) apps.value = a
+                val cn = withContext(Dispatchers.IO) { Continue.all(this@MainActivity) }
+                if (cn.map { it.title + it.sub + it.progress } != cont.value.map { it.title + it.sub + it.progress }) cont.value = cn
                 // 每小时刷新推荐与天气
                 if (System.currentTimeMillis() - Prefs.sp.getLong("recTime", 0) > 3600_000 || recs.value.isEmpty()) {
                     val r = withContext(Dispatchers.IO) { runCatching { Recs.fetch(this@MainActivity) }.getOrDefault(emptyMap()) }
@@ -72,19 +80,23 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable fun Home() {
-        Prefs.ver.intValue
-        val t = now.value
-        val dark = remember(t.hour, t.minute / 10, Prefs.ver.intValue) { isDark() }
-        val p = Pal(dark)
-        val ctx = LocalContext.current
+        val ver = Prefs.ver.intValue
+        val dk = remember(dark.value, ver) { isDark() }
+        val p = remember(dk) { Pal(dk) }
         var tab by remember { mutableIntStateOf(0) }
-        val tabs = listOf("推荐") + Recs.KINDS.filterKeys { it in Prefs.recKinds }.values
-        val list = when (tab) { 0 -> mixed(recs.value); else -> recs.value[Recs.KINDS.entries.first { it.value == tabs[tab] }.key] ?: emptyList() }
+        val tabs = remember(ver) { listOf("推荐") + Recs.KINDS.filterKeys { it in Prefs.recKinds }.values }
+        if (tab >= tabs.size) tab = 0
+        val rv = recs.value
+        val list = remember(rv, tab, tabs) { when (tab) { 0 -> mixed(rv); else -> rv[Recs.KINDS.entries.first { it.value == tabs[tab] }.key] ?: emptyList() } }
         val top = Prefs.top
-        val showCont = cont.value.isNotEmpty() && (top == "continue" || (top == "auto" && dark))
+        val showCont = cont.value.isNotEmpty() && (top == "continue" || (top == "auto" && dk && list.isEmpty()))
         val shelfFocus = remember { FocusRequester() }
 
-        Box(Modifier.fillMaxSize().background(p.bg)) {
+        val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+        val tiles = shelfTiles()
+        val rows = remember(tiles) { listOf(tiles.take(8)) + tiles.drop(8).chunked(8) }
+        Column(Modifier.fillMaxSize().background(p.bg).verticalScroll(rememberScrollState())) {
+        Box(Modifier.fillMaxWidth().height(screenH)) {
             // 顶部标签（推荐/电影/剧集/综艺）
             if (!showCont && list.isNotEmpty() && top != "clock") Row(Modifier.padding(start = 100.u, top = 60.u).clip(RoundedCornerShape(40.u)).background(p.tabs)
                 .border(1.u, p.glassBorder, RoundedCornerShape(40.u)).padding(8.u), horizontalArrangement = Arrangement.spacedBy(6.u)) {
@@ -97,24 +109,33 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            val bigClock = (!showCont && list.isEmpty()) || top == "clock"
-            if (!bigClock) Column(Modifier.align(Alignment.TopEnd).padding(top = 44.u, end = 100.u), horizontalAlignment = Alignment.End) {
-                T(t.format(DateTimeFormatter.ofPattern("HH:mm")), 96, p.fg, FontWeight.Light)
-                T(dateLine(t.toLocalDate()), 24, p.fg, modifier = Modifier.padding(top = 8.u), alpha = .75f)
-                weather.value?.let { T("${it.icon} ${Prefs.city.name} ${it.text} ${it.temp}°", 24, p.fg, modifier = Modifier.padding(top = 8.u), alpha = .75f) }
-            }
+            val bigClock = list.isEmpty() && !showCont
+            if (!bigClock) Clock(p, false, Modifier.align(Alignment.TopEnd).padding(top = 50.u, end = 100.u))
             when {
-                bigClock -> Column(Modifier.align(Alignment.TopCenter).padding(top = 180.u), horizontalAlignment = Alignment.CenterHorizontally) {
-                    T(t.format(DateTimeFormatter.ofPattern("HH:mm")), 220, p.fg, FontWeight.ExtraLight)
-                    T(dateLine(t.toLocalDate()), 34, p.fg, alpha = .8f)
-                    weather.value?.let { T("${it.icon} ${Prefs.city.name} ${it.text} ${it.temp}°", 34, p.fg, modifier = Modifier.padding(top = 12.u), alpha = .8f) }
-                }
+                bigClock -> Clock(p, true, Modifier.align(Alignment.TopCenter).padding(top = 180.u))
                 showCont -> { T("继续观看", 34, p.fg, FontWeight.Bold, Modifier.padding(start = 100.u, top = 170.u)); ContRow(cont.value) }
-                else -> { T("今日热播", 34, p.fg, FontWeight.Bold, Modifier.padding(start = 100.u, top = 170.u)); RecRow(list, tab) }
+                else -> { T("今日热播 · 豆瓣", 34, p.fg, FontWeight.Bold, Modifier.padding(start = 100.u, top = 170.u)); RecRow(list, tab) }
             }
-            Shelf(p, Modifier.align(Alignment.BottomCenter), shelfFocus)
+            ShelfRow(p, rows[0], Modifier.align(Alignment.BottomCenter), shelfFocus)
+        }
+        // 第 9 个起的应用：往下排，按“下”键时焦点进入并自动滚动露出
+        rows.drop(1).forEach { r -> ShelfRow(p, r, Modifier.padding(top = 0.u), null) }
+        Spacer(Modifier.height(40.u))
         }
         LaunchedEffect(Unit) { delay(300); runCatching { shelfFocus.requestFocus() } }
+    }
+
+    /** 时钟单独成组件：每分钟只重组这几行文字 */
+    @Composable fun Clock(p: Pal, big: Boolean, m: Modifier) {
+        val t = now.value
+        val hm = remember(t) { t.format(DateTimeFormatter.ofPattern("HH:mm")) }
+        val dl = remember(t.toLocalDate()) { dateLine(t.toLocalDate()) }
+        val w = weather.value?.let { "${it.icon} ${Prefs.city.name} ${it.text} ${it.temp}°" }
+        Column(m, horizontalAlignment = if (big) Alignment.CenterHorizontally else Alignment.End) {
+            T(hm, if (big) 200 else 64, p.fg, FontWeight.Light)
+            T(if (w != null && !big) "$dl  $w" else dl, if (big) 34 else 22, p.fg, modifier = Modifier.padding(top = 6.u), alpha = .75f)
+            if (big && w != null) T(w, 34, p.fg, modifier = Modifier.padding(top = 12.u), alpha = .8f)
+        }
     }
 
     @Composable fun RecRow(list: List<Rec>, tab: Int) {
@@ -123,25 +144,20 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(tab) { st.scrollToItem(0) }
         LazyRow(Modifier.padding(top = 240.u).height(480.u).fillMaxWidth(), st, contentPadding = PaddingValues(horizontal = 100.u),
             horizontalArrangement = Arrangement.spacedBy(36.u), verticalAlignment = Alignment.Bottom) {
-            itemsIndexed(list.take(20), key = { i, r -> "$tab-$i-${r.id}" }) { i, r ->
+            itemsIndexed(list.take(20), key = { _, r -> r.kind + r.id }, contentType = { _, _ -> "rec" }) { i, r ->
                 var fo by remember { mutableStateOf(false) }
-                val w by animateDpAsState(if (fo) 820.u else 280.u, label = "w"); val h by animateDpAsState(if (fo) 460.u else 420.u, label = "h")
-                Box(Modifier.size(w, h).shadow(if (fo) 30.u else 10.u, RoundedCornerShape(28.u)).clip(RoundedCornerShape(28.u)).background(grad(i + 1))
-                    .then(if (fo) Modifier.border(4.u, Color(0xE6FFFFFF), RoundedCornerShape(28.u)) else Modifier)
-                    .tvClick({ fo = it }) { Apps.openSearch(ctx, r.pkg, r.title) }) {
+                val sc by animateFloatAsState(if (fo) 1.08f else 1f, tween(120), label = "s")
+                val shape = RoundedCornerShape(24.u)
+                Box(Modifier.size(300.u, 440.u).graphicsLayer { scaleX = sc; scaleY = sc }.clip(shape).background(grad(i + 1))
+                    .then(if (fo) Modifier.border(4.u, Color.White, shape) else Modifier)
+                    .tvClick({ fo = it }) { Apps.openRec(ctx, r, apps.value) }) {
                     Poster(r.cover, Modifier.fillMaxSize())
-                    if (fo) {
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)), startY = 150f)))
-                        Column(Modifier.align(Alignment.BottomStart).padding(start = 40.u, bottom = 36.u)) {
-                            T(r.title, 52, Color.White, FontWeight.ExtraBold)
-                            T(Recs.KINDS[r.kind].orEmpty() + (if (r.rate.isNotBlank()) " · 豆瓣 ${r.rate}" else " · 豆瓣暂无评分"), 24, Color.White, modifier = Modifier.padding(top = 10.u), alpha = .92f)
-                            Box(Modifier.padding(top = 18.u).clip(RoundedCornerShape(30.u)).background(Color.White).padding(horizontal = 30.u, vertical = 12.u)) {
-                                T("▶ 在 ${r.platform} 搜索播放", 24, Color(0xFF111111), FontWeight.Bold)
-                            }
+                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color(0x99000000)).padding(start = 18.u, end = 12.u, top = 12.u, bottom = 14.u)) {
+                        Column {
+                            T(r.title, 28, Color.White, FontWeight.Bold)
+                            if (fo) T(Recs.KINDS[r.kind].orEmpty() + (if (r.rate.isNotBlank()) " · 豆瓣 ${r.rate}" else "") +
+                                (if (r.platform.isNotBlank()) " · ${r.platform}" else ""), 20, Color.White, modifier = Modifier.padding(top = 6.u), alpha = .9f)
                         }
-                    } else {
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x80000000)), startY = 300f)))
-                        T(r.title, 28, Color.White, FontWeight.Bold, Modifier.align(Alignment.BottomStart).padding(start = 22.u, bottom = 20.u, end = 12.u))
                     }
                 }
             }
@@ -152,14 +168,14 @@ class MainActivity : ComponentActivity() {
         val ctx = LocalContext.current
         LazyRow(Modifier.padding(top = 240.u).height(420.u).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 100.u),
             horizontalArrangement = Arrangement.spacedBy(36.u), verticalAlignment = Alignment.Bottom) {
-            itemsIndexed(list) { i, c ->
+            itemsIndexed(list, key = { i, c -> "$i-${c.title}" }) { i, c ->
                 var fo by remember { mutableStateOf(false) }
-                val w by animateDpAsState(if (fo) 520.u else 440.u, label = "w"); val h by animateDpAsState(if (fo) 390.u else 330.u, label = "h")
-                Box(Modifier.size(w, h).shadow(if (fo) 30.u else 10.u, RoundedCornerShape(28.u)).clip(RoundedCornerShape(28.u)).background(grad(i * 3 + 4))
+                val sc by animateFloatAsState(if (fo) 1.08f else 1f, tween(120), label = "s")
+                Box(Modifier.size(440.u, 330.u).graphicsLayer { scaleX = sc; scaleY = sc }.clip(RoundedCornerShape(28.u)).background(grad(i * 3 + 4))
                     .then(if (fo) Modifier.border(4.u, Color.White, RoundedCornerShape(28.u)) else Modifier)
                     .tvClick({ fo = it }) { c.intent?.let { runCatching { ctx.startActivity(it) } } }) {
-                    if (c.image.isNotBlank()) Poster(c.image, Modifier.fillMaxSize())
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x33000000), Color.Transparent, Color(0x99000000)))))
+                    if (c.image.isNotBlank()) Poster(c.image, Modifier.fillMaxSize(), 440, 330)
+                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(110.u).background(Color(0x88000000)))
                     T(c.source, 18, Color.White, modifier = Modifier.padding(start = 24.u, top = 20.u).clip(RoundedCornerShape(10.u)).background(Color(0x59000000)).padding(horizontal = 12.u, vertical = 4.u))
                     T(c.title + if (c.sub.isNotBlank()) " · ${c.sub}" else "", 30, Color.White, FontWeight.Bold, Modifier.align(Alignment.BottomStart).padding(start = 24.u, bottom = 44.u, end = 24.u))
                     Box(Modifier.align(Alignment.BottomStart).padding(start = 24.u, end = 24.u, bottom = 22.u).fillMaxWidth().height(8.u).clip(RoundedCornerShape(4.u)).background(Color(0x4DFFFFFF))) {
@@ -170,30 +186,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable fun Shelf(p: Pal, m: Modifier, fr: FocusRequester) {
+    class Tile(val key: String, val label: String, val icon: androidx.compose.ui.graphics.ImageBitmap?, val glyph: String?, val onClick: () -> Unit)
+
+    /** 第一排：前 6 个应用 + 电视设置 + 桌面设置（固定可达）；其余应用每排 8 个 */
+    @Composable fun shelfTiles(): List<Tile> {
         val ctx = LocalContext.current
-        Prefs.ver.intValue
-        val items = Apps.shelf(ctx, apps.value)
-        Row(m.padding(start = 100.u, end = 100.u, bottom = 70.u).fillMaxWidth().height(250.u).shadow(20.u, RoundedCornerShape(44.u), ambientColor = Color(0x14000000))
-            .clip(RoundedCornerShape(44.u)).background(p.glass).border(1.u, p.glassBorder, RoundedCornerShape(44.u)).padding(horizontal = 40.u),
-            horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
-            items.forEachIndexed { i, a -> ShelfItem(p, a.label, a.icon, if (i == 0) Modifier.focusRequester(fr) else Modifier) { Apps.launch(ctx, a.pkg) } }
-            ShelfItem(p, "设置", null, if (items.isEmpty()) Modifier.focusRequester(fr) else Modifier) { ctx.startActivity(Intent(ctx, SettingsActivity::class.java)) }
+        val ver = Prefs.ver.intValue
+        val all = apps.value
+        return remember(all, ver) {
+            val items = Apps.shelf(ctx, all).filter { it.pkg !in Apps.VENDOR_SETTINGS }
+                .map { a -> Tile(a.pkg, a.label, a.icon, null) { Apps.launch(ctx, a.pkg) } }
+            val pinned = listOf(Tile("#tv", "电视设置", null, "📺") { Apps.openSystemSettings(ctx) },
+                Tile("#me", "桌面设置", null, "⚙") { ctx.startActivity(Intent(ctx, SettingsActivity::class.java)) })
+            items.take(6) + pinned + items.drop(6)
         }
     }
 
-    @Composable fun ShelfItem(p: Pal, label: String, icon: android.graphics.drawable.Drawable?, m: Modifier, onClick: () -> Unit) {
+    @Composable fun ShelfRow(p: Pal, tiles: List<Tile>, m: Modifier, fr: FocusRequester?) {
+        Row(m.padding(start = 100.u, end = 100.u, bottom = 70.u).fillMaxWidth().height(250.u)
+            .clip(RoundedCornerShape(44.u)).background(p.glass).border(1.u, p.glassBorder, RoundedCornerShape(44.u)).padding(horizontal = 30.u),
+            horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+            tiles.forEachIndexed { i, t -> key(t.key) { ShelfItem(p, t.label, t.icon, t.glyph, if (i == 0 && fr != null) Modifier.focusRequester(fr) else Modifier, t.onClick) } }
+            repeat(8 - tiles.size) { Spacer(Modifier.width(160.u)) }   // 不满 8 个时保持对齐
+        }
+    }
+
+    @Composable fun ShelfItem(p: Pal, label: String, icon: androidx.compose.ui.graphics.ImageBitmap?, glyph: String?, m: Modifier, onClick: () -> Unit) {
         var fo by remember { mutableStateOf(false) }
-        val sc by animateFloatAsState(if (fo) 1.15f else 1f, label = "s")
-        val plat = PLATFORMS.firstOrNull { label.contains(it.name.take(2)) }
-        Column(m.width(170.u).tvClick({ fo = it }, onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.scale(sc).size(150.u).shadow(if (fo) 26.u else 8.u, RoundedCornerShape(36.u)).clip(RoundedCornerShape(36.u))
-                .background(if (icon == null) Color(0xFF8E8E93) else Color(plat?.color ?: 0xFF3A3F55))
-                .then(if (fo) Modifier.border(4.u, Color.White, RoundedCornerShape(36.u)) else Modifier), contentAlignment = Alignment.Center) {
-                if (icon == null) T("⚙", 64, Color.White, FontWeight.ExtraBold) else AppIcon(icon, Modifier.size(110.u))
-                if (fo) Box(Modifier.matchParentSize().background(Brush.linearGradient(listOf(Color(0x66FFFFFF), Color.Transparent))))
+        val sc by animateFloatAsState(if (fo) 1.12f else 1f, tween(120), label = "s")
+        val bg = remember(label, icon) { if (icon == null) Color(0xFF8E8E93) else Color(PLATFORMS.firstOrNull { label.contains(it.name.take(2)) }?.color ?: 0xFF3A3F55) }
+        val shape = RoundedCornerShape(36.u)
+        Column(m.width(160.u).tvClick({ fo = it }, onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(140.u).graphicsLayer { scaleX = sc; scaleY = sc }.clip(shape).background(bg)
+                .then(if (fo) Modifier.border(4.u, Color.White, shape) else Modifier), contentAlignment = Alignment.Center) {
+                if (icon == null) T(glyph ?: "?", 60, Color.White, FontWeight.ExtraBold) else AppIcon(icon, Modifier.size(104.u))
             }
-            T(label, 22, p.fg, FontWeight.SemiBold, Modifier.padding(top = if (fo) 26.u else 12.u))
+            T(label, 22, p.fg, FontWeight.SemiBold, Modifier.padding(top = 18.u))
         }
     }
 }

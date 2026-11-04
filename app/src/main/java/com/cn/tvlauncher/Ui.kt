@@ -25,6 +25,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.core.graphics.drawable.toBitmap
+import android.graphics.Bitmap
+import coil.ImageLoader
+import coil.memory.MemoryCache
+import coil.size.Precision
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import org.json.JSONArray
@@ -67,15 +71,23 @@ fun grad(i: Int) = GRADS[Math.floorMod(i, GRADS.size)].let { Brush.linearGradien
         .onFocusChanged { onFocus(it.isFocused) }.clickable(src, null) { onClick() }
 }
 
-@Composable fun Poster(url: String, modifier: Modifier) {
-    val ctx = LocalContext.current
-    AsyncImage(model = ImageRequest.Builder(ctx).data(url).addHeader("Referer", "https://movie.douban.com/").addHeader("User-Agent", UA).crossfade(true).build(),
-        contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = modifier)
+/** 低内存电视用的图片加载器：小内存缓存、RGB_565、不做交叉淡入 */
+object Img {
+    @Volatile private var l: ImageLoader? = null
+    fun get(c: Context): ImageLoader = l ?: synchronized(this) { l ?: ImageLoader.Builder(c.applicationContext)
+        .memoryCache { MemoryCache.Builder(c.applicationContext).maxSizePercent(0.12).build() }
+        .bitmapConfig(Bitmap.Config.RGB_565).allowRgb565(true).crossfade(false).build().also { l = it } }
 }
 
-@Composable fun AppIcon(d: Drawable?, modifier: Modifier) {
-    val bmp = remember(d) { d?.let { runCatching { it.toBitmap(160, 160).asImageBitmap() }.getOrNull() } }
-    if (bmp != null) Image(BitmapPainter(bmp), null, modifier) else Box(modifier)
+@Composable fun Poster(url: String, modifier: Modifier, w: Int = 300, h: Int = 440) {
+    val ctx = LocalContext.current
+    val req = remember(url, w, h) { ImageRequest.Builder(ctx).data(url).addHeader("Referer", "https://movie.douban.com/").addHeader("User-Agent", UA)
+        .size(w, h).precision(Precision.INEXACT).bitmapConfig(Bitmap.Config.RGB_565).allowRgb565(true).build() }
+    AsyncImage(model = req, imageLoader = Img.get(ctx), contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = modifier)
+}
+
+@Composable fun AppIcon(bmp: ImageBitmap?, modifier: Modifier) {
+    if (bmp != null) Image(remember(bmp) { BitmapPainter(bmp) }, null, modifier) else Box(modifier)
 }
 
 // 推荐缓存（屏保共用）

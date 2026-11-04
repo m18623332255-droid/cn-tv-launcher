@@ -38,7 +38,7 @@ class LogicTest {
         assertEquals("小城良方", l[0].title); assertEquals("8.0", l[0].rate); assertEquals("36675942", l[0].id); assertEquals("tv", l[0].kind)
         val a = Recs.assign(l, listOf("腾讯视频" to "com.ktcp.video", "芒果TV" to "com.hunantv.license"))
         assertEquals("腾讯视频", a[0].platform); assertEquals("com.hunantv.license", a[1].pkg)
-        assertTrue(Recs.assign(l, emptyList()).isEmpty())
+        assertEquals(2, Recs.assign(l, emptyList()).size)  // 没装平台也显示
         assertTrue(Recs.parse("{}", "movie").isEmpty())
     }
 
@@ -49,10 +49,20 @@ class LogicTest {
 
     @Test fun debloatSafety() {
         assertTrue(Debloat.isProtected("com.android.tv.settings"))
+        assertTrue(Debloat.isProtected("com.hisense.tv.settings")); assertTrue(Debloat.isProtected("com.tianci.setting"))
+        assertFalse(Debloat.isProtected("com.hisense.service.ad"))
         assertFalse(Debloat.mayDisableHome("com.tianci.homepage"))
         assertTrue(Debloat.mayDisableHome("com.mitv.tvhome"))
         val l = Debloat.Log(mutableListOf("a.b", "c.d"), "x/y", "h/i")
         assertEquals(l, Debloat.Log.parse(l.json()))
         assertTrue(Debloat.Log.parse("garbage").empty)
+    }
+
+    @Test fun fallbackPlayerPick() {
+        fun a(p: String, l: String) = AppInfo(p, l, null)
+        assertEquals("com.github.tvbox.osc", fallbackPlayer(listOf(a("x", "Hi音乐"), a("com.home.tvvideo", "家庭影视"), a("com.github.tvbox.osc", "TVBox")))?.pkg)
+        assertEquals("y.z", fallbackPlayer(listOf(a("com.home.tvvideo", "家庭影视"), a("y.z", "My TVBox")))?.pkg)
+        assertEquals("com.home.tvvideo", fallbackPlayer(listOf(a("com.home.tvvideo", "家庭影视")))?.pkg)
+        assertNull(fallbackPlayer(listOf(a("x", "Hi投屏"))))
     }
 }

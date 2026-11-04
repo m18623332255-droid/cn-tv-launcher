@@ -7,6 +7,11 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
+import android.widget.Toast
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -22,7 +27,19 @@ fun get(url: String, referer: String? = null): String {
 }
 
 // ---------------- 应用 ----------------
-data class AppInfo(val pkg: String, val label: String, val icon: Drawable?, val banner: Drawable?)
+/** icon 为已缩放好的位图（缓存，避免每次刷新重新加载 Drawable 和重组） */
+data class AppInfo(val pkg: String, val label: String, val icon: ImageBitmap?)
+
+/** 常见 TVBox 类壳子包名（社区常见，尽力列出） */
+val TVBOX_PKGS = listOf("com.github.tvbox.osc", "com.github.tvbox.osc.tk", "com.github.tvbox.osc.bh", "com.github.tvbox.osc.wxwz",
+    "com.fongmi.android.tv", "com.github.catvod", "com.tvbox.osc", "com.box.tvbox", "com.takagen.tvbox", "com.mygithub0.tvbox0.osc")
+const val HOME_VIDEO_PKG = "com.home.tvvideo"
+
+/** 没装主流平台时的兜底播放器：TVBox 包名 → 名字含 TVBox/影视 → 家庭影视（纯函数，单元测试） */
+fun fallbackPlayer(all: List<AppInfo>): AppInfo? =
+    TVBOX_PKGS.firstNotNullOfOrNull { p -> all.firstOrNull { it.pkg == p } }
+        ?: all.firstOrNull { it.label.contains("tvbox", true) || (it.label.contains("影视") && it.pkg != HOME_VIDEO_PKG) }
+        ?: all.firstOrNull { it.pkg == HOME_VIDEO_PKG }
 
 /** 视频平台：包名尽力列出（同一平台多个版本按顺序取第一个已装的） */
 data class Platform(val key: String, val name: String, val color: Long, val pkgs: List<String>)
@@ -36,19 +53,24 @@ val PLATFORMS = listOf(
 )
 
 object Apps {
+    private val iconCache = java.util.concurrent.ConcurrentHashMap<String, Pair<String, AppInfo>>()
     fun installed(c: Context): List<AppInfo> {
         val pm = c.packageManager
         val seen = LinkedHashMap<String, AppInfo>()
+        fun ver(p: String) = runCatching { pm.getPackageInfo(p, 0).lastUpdateTime }.getOrDefault(0L)
         for (cat in listOf(Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER)) {
             val list = runCatching { pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(cat), 0) }.getOrDefault(emptyList())
             for (ri in list) {
                 val p = ri.activityInfo.packageName
                 if (p == c.packageName || p in seen) continue
-                val ai = ri.activityInfo.applicationInfo
-                seen[p] = AppInfo(p, ri.loadLabel(pm).toString(), runCatching { ri.loadIcon(pm) }.getOrNull(),
-                    runCatching { ai.loadBanner(pm) ?: ri.activityInfo.loadBanner(pm) }.getOrNull())
+                val key = "$p@${ver(p)}"
+                val cached = iconCache[p]
+                seen[p] = if (cached != null && cached.first == key) cached.second else
+                    AppInfo(p, ri.loadLabel(pm).toString(), runCatching { ri.loadIcon(pm).toBitmap(128, 128).asImageBitmap() }.getOrNull())
+                        .also { iconCache[p] = key to it }
             }
         }
+        iconCache.keys.retainAll(seen.keys)
         return seen.values.sortedBy { it.label }
     }
     fun isInstalled(c: Context, p: String) = runCatching { c.packageManager.getPackageInfo(p, 0); true }.getOrDefault(false)
@@ -64,14 +86,37 @@ object Apps {
             val i = Intent(a).setPackage(p).putExtra("query", q).putExtra("keyword", q).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (pm.queryIntentActivities(i, 0).isNotEmpty() && runCatching { c.startActivity(i); true }.getOrDefault(false)) return
         }
+        launchIntent(c, p)?.putExtra("query", q)?.putExtra("keyword", q)?.putExtra("title", q)?.let { if (runCatching { c.startActivity(it); true }.getOrDefault(false)) return }
         launch(c, p)
+    }
+
+    /** 点击推荐：已装平台 → TVBox/影视类 → 家庭影视 → 提示片名 */
+    fun openRec(c: Context, r: Rec, all: List<AppInfo>) {
+        if (r.pkg.isNotBlank() && isInstalled(c, r.pkg)) { openSearch(c, r.pkg, r.title); return }
+        val fb = fallbackPlayer(all)
+        if (fb != null) { openSearch(c, fb.pkg, r.title); return }
+        Toast.makeText(c, "《${r.title}》：本机没有可播放的影视应用", Toast.LENGTH_SHORT).show()
+    }
+
+    /** 厂商设置包名（海信等，尽力列出） */
+    val VENDOR_SETTINGS = listOf("com.android.tv.settings", "com.hisense.tv.settings", "com.hisense.settings", "com.jamdeo.settings",
+        "com.hisense.hitv.settings", "com.xiaomi.mitv.settings", "com.tcl.settings", "com.tianci.setting", "com.android.settings")
+
+    /** 打开电视原来的系统设置 */
+    fun openSystemSettings(c: Context) {
+        fun go(i: Intent?) = i != null && runCatching { c.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true }.getOrDefault(false)
+        if (go(Intent(Settings.ACTION_SETTINGS))) return
+        for (p in VENDOR_SETTINGS) if (go(launchIntent(c, p))) return
+        if (go(Intent("android.settings.SETTINGS"))) return
+        if (go(Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.MainSettings"))) return
+        Toast.makeText(c, "没找到系统设置", Toast.LENGTH_SHORT).show()
     }
     /** 默认应用架：已装平台 + 其余 */
     fun shelf(c: Context, all: List<AppInfo>): List<AppInfo> {
         val chosen = Prefs.shelf
         if (chosen.isNotEmpty()) return chosen.mapNotNull { p -> all.firstOrNull { it.pkg == p } }
         val plat = PLATFORMS.mapNotNull { pl -> all.firstOrNull { it.pkg in pl.pkgs } }
-        return (plat + all.filter { it !in plat }).take(8)
+        return plat + all.filter { it !in plat }
     }
 }
 
@@ -95,7 +140,7 @@ object Recs {
     }
     /** 把推荐轮流分配给本机已装的平台（豆瓣不提供版权平台，故只能“在该平台搜索”） */
     fun assign(list: List<Rec>, plats: List<Pair<String, String>>): List<Rec> {
-        if (plats.isEmpty()) return emptyList()
+        if (plats.isEmpty()) return list   // 没装平台也照样显示，点击时再找 TVBox/家庭影视
         return list.mapIndexed { i, r -> r.copy(platform = plats[i % plats.size].first, pkg = plats[i % plats.size].second) }
     }
     fun fetch(c: Context): Map<String, List<Rec>> {

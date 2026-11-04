@@ -57,7 +57,8 @@ object Debloat {
     /** 原厂桌面被写死在系统里的品牌：只设默认桌面，不停用原厂桌面（创维/酷开停用会卡开机 [D]；海信、当贝未经核实，保守处理） */
     private val KEEP_HOME_PREFIX = listOf("com.tianci.", "com.coocaa.", "com.skyworth.", "com.hisense.", "com.jamdeo.", "com.dangbei.", "com.android.tv.settings", "com.android.settings")
 
-    fun isProtected(p: String) = PROTECTED_PREFIX.any { p == it || (it.endsWith(".") && p.startsWith(it)) } || p == "com.cn.tvlauncher"
+    /** 任何“设置”类包都不停用（保留电视原来的设置） */
+    fun isProtected(p: String) = p.contains("setting", ignoreCase = true) || PROTECTED_PREFIX.any { p == it || (it.endsWith(".") && p.startsWith(it)) } || p == "com.cn.tvlauncher"
     fun mayDisableHome(p: String) = !isProtected(p) && KEEP_HOME_PREFIX.none { p.startsWith(it) }
 
     /** 原厂桌面（HOME 组件，不含本应用、系统兜底 FallbackHome） */
