@@ -11,7 +11,7 @@
         <package android:name="com.home.tvvideo" />
         <provider android:authorities="com.home.tvvideo.continue" />
     </queries>
-    <application android:label="清爽桌面" android:icon="@drawable/ic_app" android:banner="@drawable/banner"
+    <application android:name=".App" android:label="清爽桌面" android:icon="@drawable/ic_app" android:banner="@drawable/banner"
         android:theme="@style/AppTheme" android:usesCleartextTraffic="true" android:supportsRtl="true" android:largeHeap="true">
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
             android:stateNotNeeded="true" android:clearTaskOnLaunch="true"

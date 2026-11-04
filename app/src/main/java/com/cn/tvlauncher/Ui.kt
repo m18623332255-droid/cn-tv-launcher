@@ -52,7 +52,8 @@ class Pal(val dark: Boolean) {
     val tabs = if (dark) Color(0x733C3C50) else Color(0x80FFFFFF)
 }
 
-fun isDark(): Boolean = when (Prefs.theme) {
+fun isDark(): Boolean = runCatching { isDark0() }.getOrDefault(true)
+private fun isDark0(): Boolean = when (Prefs.theme) {
     "dark" -> true; "light" -> false
     else -> { val c = Prefs.city; val t = LocalTime.now(); Sun.isNight(LocalDate.now(), t.hour * 60 + t.minute, c.lat, c.lon) }
 }

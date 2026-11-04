@@ -41,11 +41,14 @@ class MainActivity : ComponentActivity() {
     private val cont = mutableStateOf<List<Cont>>(emptyList())
     private val apps = mutableStateOf<List<AppInfo>>(emptyList())
     private val now = mutableStateOf(LocalDateTime.now().withSecond(0).withNano(0))   // 只有 Clock 读取
-    private val dark = mutableStateOf(isDark())
+    private val dark = mutableStateOf(false)   // 1.0.1/1.0.2 闪退根因：这里曾在 Prefs.init 之前调用 isDark()
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Prefs.init(this)
+        val crash = Crash.read(this)
+        if (crash != null) { setContent { InitScale(); SafeMode(crash) }; return }
+        dark.value = isDark()
         recs.value = loadRecs(); weather.value = weatherCache()
         setContent { InitScale(); Home() }
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) {
@@ -54,7 +57,7 @@ class MainActivity : ComponentActivity() {
             delay((60 - t.second) * 1000L + 50)
         } } }
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
+            while (true) { runCatching {
                 val a = withContext(Dispatchers.IO) { Apps.installed(this@MainActivity) }
                 if (a != apps.value) apps.value = a
                 val cn = withContext(Dispatchers.IO) { Continue.all(this@MainActivity) }
@@ -66,6 +69,7 @@ class MainActivity : ComponentActivity() {
                     else if (System.currentTimeMillis() - Prefs.sp.getLong("recTime", 0) > 6 * 3600_000) recs.value = emptyMap()
                     withContext(Dispatchers.IO) { runCatching { WeatherApi.fetch(Prefs.city) }.getOrNull() }?.let { weather.value = it; saveWeather(it) }
                 }
+                }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Crash.save(this@MainActivity, it, fatal = false) }
                 delay(60_000)
             }
         } }
@@ -197,7 +201,7 @@ class MainActivity : ComponentActivity() {
             val items = Apps.shelf(ctx, all).filter { it.pkg !in Apps.VENDOR_SETTINGS }
                 .map { a -> Tile(a.pkg, a.label, a.icon, null) { Apps.launch(ctx, a.pkg) } }
             val pinned = listOf(Tile("#tv", "电视设置", null, "📺") { Apps.openSystemSettings(ctx) },
-                Tile("#me", "桌面设置", null, "⚙") { ctx.startActivity(Intent(ctx, SettingsActivity::class.java)) })
+                Tile("#me", "桌面设置", null, "⚙") { runCatching { ctx.startActivity(Intent(ctx, SettingsActivity::class.java)) } })
             items.take(6) + pinned + items.drop(6)
         }
     }
@@ -222,6 +226,30 @@ class MainActivity : ComponentActivity() {
                 if (icon == null) T(glyph ?: "?", 60, Color.White, FontWeight.ExtraBold) else AppIcon(icon, Modifier.size(104.u))
             }
             T(label, 22, p.fg, FontWeight.SemiBold, Modifier.padding(top = 18.u))
+        }
+    }
+
+    /** 安全模式：显示上次的错误，并给一个最简单的应用架 */
+    @Composable fun SafeMode(err: String) {
+        val ctx = LocalContext.current
+        val list = remember { runCatching { Apps.installed(ctx) }.getOrDefault(emptyList()) }
+        val first = remember { FocusRequester() }
+        Column(Modifier.fillMaxSize().background(Color(0xFF15171F)).verticalScroll(rememberScrollState()).padding(60.u)) {
+            T("清爽桌面 安全模式：上次运行出错了（错误已保存）", 36, Color.White, FontWeight.Bold)
+            Row(Modifier.padding(vertical = 24.u), horizontalArrangement = Arrangement.spacedBy(20.u)) {
+                SafeBtn("重新进入桌面", Modifier.focusRequester(first)) { Crash.clear(ctx); recreate() }
+                SafeBtn("电视设置") { Apps.openSystemSettings(ctx) }
+                SafeBtn("桌面设置") { runCatching { ctx.startActivity(Intent(ctx, SettingsActivity::class.java)) } }
+            }
+            list.chunked(6).forEach { r -> Row(Modifier.padding(bottom = 16.u), horizontalArrangement = Arrangement.spacedBy(20.u)) { r.forEach { a -> SafeBtn(a.label) { Apps.launch(ctx, a.pkg) } } } }
+            T(err.take(4000), 18, Color(0xFFFFB4A9), modifier = Modifier.padding(top = 20.u), lines = 60)
+        }
+        LaunchedEffect(Unit) { delay(300); runCatching { first.requestFocus() } }
+    }
+    @Composable fun SafeBtn(s: String, m: Modifier = Modifier, onClick: () -> Unit) {
+        var fo by remember { mutableStateOf(false) }
+        Box(m.clip(RoundedCornerShape(20.u)).background(if (fo) Color.White else Color(0xFF333848)).tvClick({ fo = it }) { runCatching(onClick) }.padding(horizontal = 30.u, vertical = 16.u)) {
+            T(s, 24, if (fo) Color.Black else Color.White)
         }
     }
 }
